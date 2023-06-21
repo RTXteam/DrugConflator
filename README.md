@@ -7,12 +7,11 @@ The process to find the RXCUI for a curie is as follows
 3) If RXCUI ID is not obtained by Step 2, using the node synonymizer, we get the english name and query the RXNORM Database with the english name
 4) If RXCUI ID is not obtained by Step 3, Use the node normalizer and obtain alternate identifiers and repeat steps 1-3
 
-class DrugConflator contains the below methods
+#class DrugConflator contains the below methods
   - # create_drugmap_table:
     This is a classmethod which is used to create the drugmap table which will store the mappings between curies and rxcui
   - # insert_drugmap_table
     This is the insert method which is used to insert records into the drugmap table
-  - 
   - # get_rxnorm_from_rxnav
     This method queries the RXNORM database located in the data/ folder with the curie. 
     Only certain types of curies can be directly queried on this database and if we are unable to query the database with the query, 
