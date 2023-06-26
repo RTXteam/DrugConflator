@@ -48,6 +48,13 @@ class DrugConflator:
             print(y)
             print('\n')
     def get_rxnorm_from_rxnav(self,mode='curie'):
+        """
+        This function queries the rxnorm sqlite database to get the rxcui id
+        It accepts two different mode names : 'curie' and 'name'. If mode='curie',
+        there are certain identifiers which can be queried in the database and those identifiers
+        are queried, if we are not able to query that particular class of identifiers,
+        execution of this function ends
+        """
         con = sqlite3.connect("data/rxnorm4.sqlite")
         cur = con.cursor()
         cur.execute(self.create_table_query)
@@ -73,8 +80,8 @@ class DrugConflator:
 
         if where_condition:
             cui_query = cui_query + where_condition + " order by DM.PRIMARY_RXCUI DESC"
-            print(cui_query)
         else:
+            #Not possible to query
             return
         rxcui = None
         cursor = cur.execute(cui_query).fetchall()
@@ -83,6 +90,9 @@ class DrugConflator:
             common_name = cursor[0][4]
             if cursor[0][0] and cursor[0][1] == "MIN":
                 rxcui = cursor[0][0]
+                in_min_flag = True
+            elif cursor[0][2] and cursor[0][1] == "MIN":
+                rxcui = cursor[0][2]
                 in_min_flag = True
                 # result.append({"input":name,"output": cursor[0][3], "type":"mixture"}
             elif cursor[0][0]:
@@ -108,7 +118,12 @@ class DrugConflator:
         con.close()
 
     def get_rxnorm_from_mychem(self):
+        """
+        This function calls mychem.info API and queries the unii.rxcui field.
+        """
         query = ""
+        # Below If else statements used as only certain types of identifiers can be queried on mychem.info
+        # If the identifier cannot be queried we end execution of this function
         if 'chembl' in self.curie.lower():
             query = f"chembl.molecule_chembl_id:{self.curie.split(':')[-1]} AND _exists_:unii.rxcui"
         elif 'umls' in self.curie.lower():
@@ -132,7 +147,6 @@ class DrugConflator:
         if not query:
             return
         res = mc.query(query, fields=", ".join(self.my_chem_fields), size=0)
-        print(f'Found {res["total"]} hits from MyChem.info API')
         if res["total"] > 0:
             # fetch_all=True option returns all hits as an iterator
             res = mc.query(query, fields=", ".join(self.my_chem_fields), size=1,fetch_all=True)
@@ -145,6 +159,9 @@ class DrugConflator:
                     self.result.append({"input_name":item['unii'].get('preferred_term'),"output": str(item['unii']['rxcui']), "type":"unknown","curie": self.curie})
     @classmethod    
     def get_all_identifiers_from_node_normalizer(self,curie):
+        """
+        This function calls the node normalizer and returns the equivalent identifiers
+        """
         url = 'https://nodenormalization-sri.renci.org/1.3/get_normalized_nodes'
         body = {
                 'curies': [
@@ -182,41 +199,60 @@ class DrugConflator:
             self.common_name = "|Not Found|"
         ns_con.close()
                                 # WHERE N.id_simplified in ('{identifier}')"""
-        # print(sql_query_template)
+        # print(sql_query_te(ˀmplate)
 def get_rxcui_results(curie):
+    """
+    This function calls the node synonymizer to get the english name of the drug
+    Following which we query the RxNav database with the identifer and get rxcui value
+    Following which we query mychem.info for the rxcui value
+    Following which we query the RxNav database with the english name
+    """
     dc = DrugConflator(curie=curie)
     equivalent_identifiers = DrugConflator.get_all_identifiers_from_node_normalizer(curie)
     dc.get_name_from_synonymizer()
     dc.get_rxnorm_from_rxnav(mode='curie')
-    if not dc.result:
-        dc.get_rxnorm_from_mychem()
-    if not dc.result:
-        dc.get_rxnorm_from_rxnav(mode='name')
+    dc.get_rxnorm_from_mychem()
+    dc.get_rxnorm_from_rxnav(mode='name')
     # dc.get_drugmap_table()
     return dc.result
 
 def get_rxcui(curie):
+    """
+    This function accepts an identifier as an input and calls the get_rxcui_results()
+    to obtain the rxcui of the identifier
+    It then calls the node normalizer to get synonymous identifiers and iterates through the 
+    list of synonymous identifiers and calls the get_rxcui_results() for each of them and
+    merges all the results. 
+    Return: The final superset of results is returned by this function
+    """
     result = get_rxcui_results(curie)
-    if not result:
-        equivalent_identifiers = DrugConflator.get_all_identifiers_from_node_normalizer(curie)
-        for identifier in equivalent_identifiers:
-            result = get_rxcui_results(curie)
-            if result:
-                break
+    #call node normalizer to get synonymous identifiers
+    equivalent_identifiers = DrugConflator.get_all_identifiers_from_node_normalizer(curie)
+    for identifier in equivalent_identifiers:
+        individual_result = get_rxcui_results(identifier)
+        result = result + individual_result
     for item in result:
         item['curie'] = curie
+    
     DrugConflator.insert_drugmap_table(result)
     # dc.create_drugmap_table()
-    pass
+    return result
 
 if __name__ == "__main__":
-    curies = """HMDB:HMDB0242177"""
-    # curies = "RXNORM:1156278"
+    #Insert List of Identifiers for which you want to run the conflator on 
+    # and separate them by listing the identifiers one below the other
+    curies = """CHEBI:15365
+                RXNORM:1156278"""
     curies = curies.split('\n')
     y= []
     for curie in curies:
         res = get_rxcui(curie.strip())
-        y.append(f"{curie.strip()}: {res}\n")
+        final_rxcui = []
+        for item in res:
+            if item['output'] not in final_rxcui:
+                final_rxcui.append(item['output'])
+        y.append(f"{curie.strip()}: {final_rxcui}\n")
         # print(f"{curie}: {res}")
+    #Prints curie with the list of RXNorms found
     for item in y:
         print(item)
