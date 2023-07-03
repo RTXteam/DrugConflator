@@ -31,9 +31,9 @@ class DrugConflator:
             json_response = response.json()
             if json_response[curie]:
                 for item in json_response[curie]['equivalent_identifiers']:
-                    if 'identifier' in item and item['identifier']:
+                    if 'identifier' in item and item['identifier'] and item['identifier'] != '':
                         identifiers.append(item['identifier'])
-                    if 'label' in item and item['label']:
+                    if 'label' in item and item['label'] and item['label'] != '':
                         labels.append(item['label'].lower())
                         
                 return [list(set(identifiers)), list(set(labels))]
@@ -73,9 +73,9 @@ class DrugConflator:
             res = ns_cur.execute(sql_query_template).fetchall()
             for item in res:
                 identifiers.append(item[0])
-                if item[2]:
+                if item[2] and item[2] != '':
                     labels.append(item[2].lower())
-                elif item[4]:
+                elif item[4] and item[4] != '':
                     labels.append(item[4].lower())
                 else:
                     pass
