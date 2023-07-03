@@ -31,9 +31,9 @@ class DrugConflator:
             json_response = response.json()
             if json_response[curie]:
                 for item in json_response[curie]['equivalent_identifiers']:
-                    if 'identifier' in item:
+                    if 'identifier' in item and item['identifier']:
                         identifiers.append(item['identifier'])
-                    if 'label' in item:
+                    if 'label' in item and item['label']:
                         labels.append(item['label'].lower())
                         
                 return [list(set(identifiers)), list(set(labels))]
@@ -75,8 +75,10 @@ class DrugConflator:
                 identifiers.append(item[0])
                 if item[2]:
                     labels.append(item[2].lower())
-                else:
+                elif item[4]:
                     labels.append(item[4].lower())
+                else:
+                    pass
 
             return [list(set(identifiers)), list(set(labels))]
         else:
