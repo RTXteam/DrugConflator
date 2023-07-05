@@ -6,6 +6,14 @@ import requests
 
 class DrugConflator:
     def __init__(self, node_synonymizer_path = "data/node_synonymizer_v1.1_KG2.8.0.1.sqlite", rxnav_url = "https://rxnav.nlm.nih.gov/REST", normalizer_url = 'https://nodenormalization-sri.renci.org/1.3'):
+        """
+        This class to identify "essentially the same" drugs based on RXCUI identifiers.
+        Parameters
+        node_synonymizer_path[str]: path to the node synonymizer database
+        rxnav_url[str]: URI of the RXNAV API endpoint
+        normalizer_url[str]: URI of the normalizer API endpoint
+        """
+        
         self.my_chem_fields = ['unii']
         self.node_synonymizer_path = node_synonymizer_path
         self.normalizer_url = normalizer_url
@@ -14,7 +22,12 @@ class DrugConflator:
 
     def _get_all_equivalent_info_from_node_normalizer(self, curie):
         """
-        This function calls the node normalizer and returns the equivalent identifiers and their names
+        This internal function calls the node normalizer and returns the equivalent identifiers and their names
+        Parameters
+        curie[str]: a curie identifier (e.g. "CHEBI:15365", "RXNORM:1156278")
+        
+        Returns
+        A list of two sublists: [identifiers, Names]
         """
 
         body = {
@@ -44,7 +57,12 @@ class DrugConflator:
 
     def _get_all_equivalent_info_from_synonymizer(self, curie):
         """
-        This function calls the node synnoymizer and returns the equivalent identifiers and their names
+        This internal function calls the node synnoymizer and returns the equivalent identifiers and their names
+        Parameters
+        curie[str]: a curie identifier (e.g. "CHEBI:15365", "RXNORM:1156278")
+        
+        Returns
+        A list of two sublists: [identifiers, Names]
         """
         ns_con = sqlite3.connect(self.node_synonymizer_path)
 
@@ -92,6 +110,32 @@ class DrugConflator:
         selected_types = ['IN', 'MIN', 'PIN', 'BN', 'SCDC', 'SBDC', 'SCD', 'GPCK', 'SBD', 'BPCK', 'SCDG', 'SBDG']
         return list(set([y['rxcui'] for x in json_response['allRelatedGroup']['conceptGroup'] if x['tty'] in selected_types and 'conceptProperties' in x  for y in x['conceptProperties']]))
 
+    @staticmethod
+    def _compute_drug_similarity(list1, list2, method='mc'):
+        """
+        This internal function computes the drug similarity
+        
+        Returns:
+        A float score between 0 and 1
+        """
+        
+        def _jaccard_similarity(list1, list2):
+            s1 = set(list1)
+            s2 = set(list2)
+            return len(s1.intersection(s2)) / len(s1.union(s2))
+        
+        def _max_containment(list1, list2):
+            s1 = set(list1)
+            s2 = set(list2)
+            return len(s1.intersection(s2)) / min(len(s1), len(s2))
+
+        if method == 'mc':
+            return _max_containment(list1, list2)
+        elif method == 'js':
+            return _jaccard_similarity(list1, list2)
+        else:
+            return None
+
 
     def get_rxnorm_from_rxnav(self, curie_list = None, name_list = None):
         """
@@ -106,6 +150,14 @@ class DrugConflator:
             The 'value' is the name of given drug
         By using these two kinds of APIs, the function will get some rxcui ids. With these key rxcui ids, another API:
             https://rxnav.nlm.nih.gov/REST/rxcui/id/allrelated.json will be called to get more related rxcui ids.
+            
+            
+        Parameters
+        curie_list[list]: a list of curie ids (e.g., ['CHEBI:136036','MESH:C026430','CAS:38609-97-1','PUBCHEM.COMPOUND:38072'])
+        name_list[list]: a list of curie names (e.g., ['cridanimod', '10-carboxymethyl-9-acridanone', 'cridanimod (inn)'])
+        
+        Returns
+        A list of rxcui ids
         """
         
         rxcui_list = []
@@ -157,6 +209,12 @@ class DrugConflator:
     def get_rxnorm_from_mychem(self ,curie_list = None):
         """
         This function calls mychem.info API and queries the unii.rxcui field for a given curie list.
+        
+        Parameters
+        curie_list[list]: a list of curie ids (e.g., ['CHEBI:136036','MESH:C026430','CAS:38609-97-1','PUBCHEM.COMPOUND:38072'])
+        
+        Returns
+        A list of rxcui ids
         """
 
         rxcui_list = []
@@ -200,6 +258,12 @@ class DrugConflator:
     def get_equivalent_curies_and_name(self, curie):
         """
         This function is used to call the node normalizer and node synonymizer to get the equivalent curies and english name based on a given curie
+        
+        Parameters
+        curie[str]: a curie identifier (e.g. "CHEBI:15365", "RXNORM:1156278")
+        
+        Returns
+        A list of two sublists: [identifiers, Names]
         """
         
         identifiers = []
@@ -224,6 +288,16 @@ class DrugConflator:
         This function calls the 'get_equivalent_curies_and_name' function to get the equivalent curies and names of the given drug
         Following which we query the RxNav database with the identifer and the english name for the rxcui value
         Following which we query mychem.info for the rxcui value
+        
+        Parameters
+        curie[str]: a curie identifier (e.g. "CHEBI:15365", "RXNORM:1156278")
+        use_curie_id[bool]: whether to use the curie identifier to query the RxCUI value
+        use_curie_name[bool]: whether to use the english name to query the RxCUI value
+        use_rxnav[bool]: whether to query the RxNav database
+        use_mychem[bool]: whether to query the mychem database
+        
+        Returns
+        A list of rxcui ids
         """
         
         result = []
@@ -248,6 +322,71 @@ class DrugConflator:
 
         return list(set(result))
 
+    def are_conflated(self, curie1, curie2, use_curie_id = True, use_curie_name = True, use_rxnav = True, use_mychem = True, method = 'mc', threshold = 0.0, return_format = 'score'):
+        """
+        This function is used to determine whether two given drug curies are essentially the same
+        
+        Parameters
+        curie1[str]: a curie identifier (e.g. "CHEBI:15365")
+        curie2[str]: a curie identifier (e.g. "RXNORM:1156278")
+        use_curie_id[bool]: whether to use the curie identifier to query the RxCUI value
+        use_curie_name[bool]: whether to use the english name to query the RxCUI value
+        use_rxnav[bool]: whether to query the RxNav database
+        use_mychem[bool]: whether to query the mychem database
+        method[str]: the method used to evaluate how close the two drugs are. (Default is 'mc'. Options: 'mc': 'max containment'; 'js': jaccard similarity)
+        threshold[float]: the threshold used to determine whether two drugs are conflated. (Default is 0.0)
+        return_format[str]: the format of the return value. (Default is 'score'. Options: 'score': return a score; 'boolean': return a boolean value)
+        
+        Returns
+        A score or a boolean value indicating whether the two drugs are conflated
+        """
+        
+        ## check if curie1 is valid
+        if not isinstance(curie1, str):
+            print(f"Curie1 must be a curie identifier", flush=True)
+            return None
+        
+        ## check if curie2 is valid
+        if not isinstance(curie2, str):
+            print(f"Curie2 must be a curie identifier", flush=True)
+            return None
+
+        ## check if method is valid
+        if method not in ['mc', 'js']:
+            print(f"Method must be either 'mc' or 'js'", flush=True)
+            return None
+        
+        ## check if return_format is valid
+        if return_format not in ['score', 'boolean']:
+            print(f"Return format must be either 'score' or 'boolean'", flush=True)
+            return None
+
+        curie1_rxcui_list = self.get_rxcui_results(curie1, use_curie_id = use_curie_id, use_curie_name = use_curie_name, use_rxnav = use_rxnav, use_mychem = use_mychem)
+        if len(curie1_rxcui_list) == 0:
+            print(f"WARNING: Curie1 does not have any rxcui value", flush=True)
+            if return_format == 'score':
+                return 0.0
+            else:
+                return False
+        
+        curie2_rxcui_list = self.get_rxcui_results(curie2, use_curie_id = use_curie_id, use_curie_name = use_curie_name, use_rxnav = use_rxnav, use_mychem = use_mychem)
+        if len(curie2_rxcui_list) == 0:
+            print(f"WARNING: Curie2 does not have any rxcui value", flush=True)
+            if return_format == 'score':
+                return 0.0
+            else:
+                return False
+            
+        if method == 'mc':
+            score = self._compute_drug_similarity(curie1_rxcui_list, curie2_rxcui_list, method='mc')
+        else:
+            score = self._compute_drug_similarity(curie1_rxcui_list, curie2_rxcui_list, method='js')
+            
+        if return_format == 'score':
+            return score
+        else:
+            return score >= threshold
+
 if __name__ == "__main__":
     ## Test Examples
     test_curies = ["CHEBI:15365", "RXNORM:1156278"]
@@ -257,3 +396,10 @@ if __name__ == "__main__":
     result = [[curie, dc.get_rxcui_results(curie)] for curie in test_curies]
     for item in result:
         print(f"query_curie: {item[0]}, rxcui: {item[1]}", flush=True)
+
+    ## A few examples to test the conflator
+    dc.are_conflated("CHEBI:15365", "RXNORM:1156278")
+    dc.are_conflated("CHEMBL.COMPOUND:CHEMBL25", "CHEBI:15365", method = 'js')
+    dc.are_conflated("CHEMBL.COMPOUND:CHEMBL25", "CHEBI:15365", method = 'js', threshold = 0.5, return_format='boolean')
+    dc.are_conflated("CHEMBL.COMPOUND:CHEMBL25", "CHEBI:15365", method = 'mc')
+    dc.are_conflated("CHEMBL.COMPOUND:CHEMBL25", "CHEBI:15365", method = 'mc', threshold = 0.5, return_format='boolean')
