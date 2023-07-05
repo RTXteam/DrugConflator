@@ -8,23 +8,53 @@ The process to find the RXCUI identifiers for a curie is as follows
  2. If the equivalent curies include the identifiers from ATC, Drugbank, GCN_SEQNO(NDDF), HIC_SEQN(NDDF), MESH, UNII_CODE(UNII), VUID(VANDF), we call [findRxcuiById](https://lhncbc.nlm.nih.gov/RxNav/APIs/api-RxNorm.findRxcuiById.html) API to get the corresponding RXCUI identifiers. For each returned RXCUI ID, we collect all related RXCUI IDs from [RxNav](https://mor.nlm.nih.gov/RxNav/) Service according to ingredient, precise ingredient, brand name, clinical drug component, branded drug component, clinical drug or pack, branded drug or pack, clinical dose form group, and branded dose form group
  3. If the equivalent curies include the identifers from CHEMBL, UMLS, KEGG.DRUG, DRUGBANK, NCIT, CHEBI, VANDF, HMDB, DrugCentral, UNII, we call [mychem.info](https://mychem.info/) API to get the corresponding RXCUI identifiers.
  4. For each equivalent name, we leverage the [getApproximateMatch](https://lhncbc.nlm.nih.gov/RxNav/APIs/api-RxNorm.getApproximateMatch.html) API with `rank==1` to get the corresponding RXCUI identifiers.
-     
-
-# How to use this tool
-To use this tool, you need to download the node synonymizer database `node_synonymizer_v1.1_KG2.8.0.1.sqlite` from [here](https://pennstateoffice365-my.sharepoint.com/:u:/g/personal/cqm5886_psu_edu/EbVzSgyiIeRCumXtAeCnSPkBTr5_g9lQ8mukWo9y3JDBzQ?e=yAXxsg), and then put it under a folder named `data`.
 
 
-Here, we provide an example python code to use this tool below:
+## Preparation
+
+### Set up Running Environment
+ 1. Install conda following its [instructions](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
+ 2. Build conda environment for this tool by running the following command:
+    ```bash
+    conda env create -f env.yml
+    ```
+
+### Download necessary databases
+To use this tool, please download the node synonymizer database [node_synonymizer_v1.1_KG2.8.0.1.sqlite](https://pennstateoffice365-my.sharepoint.com/:u:/g/personal/cqm5886_psu_edu/EbVzSgyiIeRCumXtAeCnSPkBTr5_g9lQ8mukWo9y3JDBzQ?e=yAXxsg), and then put it under a folder named `data`:
+```bash
+mkdir data
+## download node_synonymizer_v1.1_KG2.8.0.1.sqlite
+mv node_synonymizer_v1.1_KG2.8.0.1.sqlite ./data
+```
+
+## How to run the tool
+Here, we provide an example `PUBCHEM.COMPOUND:38072` to illustrate some useful methods:
 ```python
 from drugconflator_new import DrugConflator
 
-## Test Examples
-test_curies = ["CHEBI:15365", "RXNORM:1156278"]
+## Query drug curie
+query_curie = "PUBCHEM.COMPOUND:38072"
+
 ## Set up drug conflator class
 dc = DrugConflator()
 
-## Extract the corresponding RXCUI ids for each test drug curies
-result = [[curie, dc.get_rxcui_results(curie)] for curie in test_curies]
-for item in result:
-    print(f"query_curie: {item[0]}, rxcui: {item[1]}", flush=True)
+## Get equivalent curies and names for query drug curie
+equivalent_curies_and_names = dc.get_equivalent_curies_and_name(query_curie)
+## equivalent curies
+equivalent_curies_and_names[0]
+## equivalent names
+equivalent_curies_and_names[1]
+
+## Extract RXCUI IDs from RXNAV database and MyChem database
+dc.get_rxcui_results(query_curie) # By default, it queries both curie id and name from both RXNAV and MyChem databases
+
+## use the curie id only for querying
+dc.get_rxcui_results(query_curie, use_curie_name = False)
+## use the curie name only for querying
+dc.get_rxcui_results(query_curie, use_curie_id = False)
+## use RXNAV database only for querying
+dc.get_rxcui_results(query_curie, use_mychem = False)
+## use MyChem database only for querying
+dc.get_rxcui_results(query_curie, use_rxnav = False)
+
 ```

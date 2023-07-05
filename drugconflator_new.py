@@ -160,9 +160,8 @@ class DrugConflator:
         """
 
         rxcui_list = []
-        # Below If else statements used as only certain types of identifiers can be queried on mychem.info
-        # If the identifier cannot be queried we end execution of this function
         
+        # filter unrelated curies
         selected_prefixes = ['CHEMBL.COMPOUND', 'UMLS', 'KEGG.DRUG', 'DRUGBANK', 'NCIT', 'CHEBI', 'VANDF', 'HMDB', 'DrugCentral', 'UNII']
         query_template_dict = {
             'CHEMBL.COMPOUND': "chembl.molecule_chembl_id:{value} AND _exists_:unii.rxcui",
@@ -176,6 +175,7 @@ class DrugConflator:
             'DrugCentral': "drugcentral.xrefs.drugcentral:{value} AND _exists_:unii.rxcui",
             'UNII': "unii.unii:{value} AND _exists_:unii.rxcui"
         }
+        
         if curie_list and len(curie_list) > 0:
             curie_list = [curie for curie in curie_list if curie.split(':')[0] in selected_prefixes]
             for curie in curie_list:
@@ -205,10 +205,13 @@ class DrugConflator:
         identifiers = []
         labels = []
         
+        # get equivalent curies and english name from node normalizer
         res_node_normalizer = self._get_all_equivalent_info_from_node_normalizer(curie)
         if len(res_node_normalizer) > 0:
             identifiers += res_node_normalizer[0]
             labels += res_node_normalizer[1]
+            
+        # get equivalent curies and english name from node synonymizer
         res_synonymizer = self._get_all_equivalent_info_from_synonymizer(curie)
         if len(res_synonymizer) > 0:
             identifiers += res_synonymizer[0]
@@ -216,18 +219,32 @@ class DrugConflator:
         
         return [list(set(identifiers)), list(set(labels))]
 
-    def get_rxcui_results(self, curie):
+    def get_rxcui_results(self, curie, use_curie_id = True, use_curie_name = True, use_rxnav = True, use_mychem = True):
         """
         This function calls the 'get_equivalent_curies_and_name' function to get the equivalent curies and names of the given drug
-        Following which we query the RxNav database with the identifer and get rxcui value
+        Following which we query the RxNav database with the identifer and the english name for the rxcui value
         Following which we query mychem.info for the rxcui value
-        Following which we query the RxNav database with the english name
         """
         
         result = []
+        ## Get equivalent curies and names
         equivalent_info = self.get_equivalent_curies_and_name(curie)
-        result += self.get_rxnorm_from_rxnav(curie_list = equivalent_info[0], name_list = equivalent_info[1])
-        result += self.get_rxnorm_from_mychem(curie_list = equivalent_info[0])
+        
+        ## Get rxcui from RxNav
+        if use_curie_id:
+            curie_list = equivalent_info[0]
+        else:
+            curie_list = None
+        if use_curie_name:
+            name_list = equivalent_info[1]
+        else:
+            name_list = None
+            
+        if use_rxnav:
+            result += self.get_rxnorm_from_rxnav(curie_list = curie_list, name_list = name_list)
+        
+        if use_mychem:
+            result += self.get_rxnorm_from_mychem(curie_list = curie_list)
 
         return list(set(result))
 
